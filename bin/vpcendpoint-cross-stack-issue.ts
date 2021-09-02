@@ -1,21 +1,43 @@
 #!/usr/bin/env node
-import 'source-map-support/register';
-import * as cdk from '@aws-cdk/core';
-import { VpcendpointCrossStackIssueStack } from '../lib/vpcendpoint-cross-stack-issue-stack';
+import "source-map-support/register";
+import * as cdk from "@aws-cdk/core";
+import { VpcStack } from "../lib/vpc-stack";
+import { HostedZoneStack } from "../lib/hosted-zone-stack";
+import { EndpointDnsStack } from "../lib/endpoint-dns-stack";
+
+const env = {
+  account: process.env.CDK_DEFAULT_ACCOUNT,
+  region: process.env.CDK_DEFAULT_REGION
+};
+
+const cidrs = ["10.0.0.0/21", "10.1.0.0/21"];
 
 const app = new cdk.App();
-new VpcendpointCrossStackIssueStack(app, 'VpcendpointCrossStackIssueStack', {
-  /* If you don't specify 'env', this stack will be environment-agnostic.
-   * Account/Region-dependent features and context lookups will not work,
-   * but a single synthesized template can be deployed anywhere. */
+const vpcStacks = new Array<VpcStack>();
 
-  /* Uncomment the next line to specialize this stack for the AWS Account
-   * and Region that are implied by the current CLI configuration. */
-  // env: { account: process.env.CDK_DEFAULT_ACCOUNT, region: process.env.CDK_DEFAULT_REGION },
+cidrs.forEach((cidr, index) => {
+  const vpcStack = new VpcStack(app, `VpcStack${index}`, {
+    env: env,
+    cidr: cidr,
+    index: index
+  });
+  vpcStacks.push(vpcStack);
+});
 
-  /* Uncomment the next line if you know exactly what Account and Region you
-   * want to deploy the stack to. */
-  // env: { account: '123456789012', region: 'us-east-1' },
+const hostedZoneStack = new HostedZoneStack(app, "HostedZoneStack", {
+  env: env,
+  zoneName: "example.com",
+  vpcStacks: vpcStacks
+});
+vpcStacks.forEach(stack => {
+  hostedZoneStack.addDependency(stack);
 
-  /* For more information, see https://docs.aws.amazon.com/cdk/latest/guide/environments.html */
+  const endpointStack = new EndpointDnsStack(app, `EndpointStack-${stack.index}`, {
+    env: env,
+    dnsName: "things.example.com",
+    hostedZone: hostedZoneStack.targetZone,
+    name: "things",
+    serviceEndpoint: "com.amazonaws.vpce.us-east-1.vpce-svc-1234567890AbcdEfg",
+    vpcStack: stack
+  });
 });
